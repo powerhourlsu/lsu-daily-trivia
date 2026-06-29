@@ -211,7 +211,7 @@ export default function TriviaGame({ puzzle }) {
         >
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div className="mono" style={{ fontSize: 11, letterSpacing: 2, opacity: 0.85 }}>
-              DAILY · {puzzle.date}
+              LSU TIGER TRIVIA · {puzzle.date}
             </div>
             {streak !== null && streak.streak > 0 && (
               <div
@@ -280,16 +280,16 @@ export default function TriviaGame({ puzzle }) {
                 alignItems: "center",
                 gap: 6,
                 marginBottom: 10,
-                color: secondsLeft <= 15 ? "#C23B3B" : "#9A8E70",
-                fontSize: 12.5,
+                color: secondsLeft <= 15 ? "#C23B3B" : "#241433",
+                fontSize: 13,
               }}
             >
               <Timer size={14} />
-              <span className="mono">
+              <span className="mono" style={{ fontWeight: 700 }}>
                 {String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:
                 {String(secondsLeft % 60).padStart(2, "0")}
               </span>
-              <span style={{ color: "#C9BFA8" }}>left on this clue</span>
+              <span style={{ color: "#9A8E70", fontWeight: 400 }}>left on this clue</span>
             </div>
           )}
 
@@ -570,7 +570,7 @@ export default function TriviaGame({ puzzle }) {
           <img
             src="/power-hour-lsu-logo.png"
             alt="Power Hour LSU"
-            style={{ width: 64, height: 64, margin: "0 auto 8px", display: "block" }}
+            style={{ width: 78, height: 78, margin: "0 auto 6px", display: "block" }}
           />
           <div style={{ fontSize: 13, color: "#5B4A78" }}>
             A{" "}
