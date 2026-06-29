@@ -9,12 +9,14 @@ order, top to bottom. Nothing here requires writing code.
 
 1. Go to sheets.google.com and create a new blank sheet.
 2. In **row 1**, type these exact column headers, one per cell, left to right:
-   `date | answer | isRival | clue1 | clue2 | clue3 | clue4 | clue5`
+   `date | answer | isRival | clue1 | clue2 | clue3 | clue4 | clue5 | funfact1 | funfact2`
 3. In **row 2** onward, add one puzzle per row:
    - `date` — format `YYYY-MM-DD`, e.g. `2026-07-01`
    - `answer` — e.g. `Joe Burrow`
    - `isRival` — type `TRUE` if the answer played against LSU, otherwise `FALSE`
    - `clue1`–`clue5` — hardest to easiest
+   - `funfact1`, `funfact2` — optional. Shown after someone solves (or loses) the
+     puzzle. Leave blank if you don't have one for that day.
 4. Click **File → Share → Publish to web**.
 5. Under "Link," make sure it says **Entire document** and the format
    dropdown says **Comma-separated values (.csv)**. Click **Publish**.

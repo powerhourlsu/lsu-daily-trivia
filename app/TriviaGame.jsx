@@ -1,23 +1,100 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { Lock, ChevronRight, RotateCcw, Trophy } from "lucide-react";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { Lock, ChevronRight, RotateCcw, Trophy, Copy, Check, Flame, Timer } from "lucide-react";
 
 const MAX_CLUES = 5;
 const POINTS_BY_CLUE = [100, 80, 60, 40, 20];
+const SECONDS_PER_CLUE = 90;
+const STREAK_KEY = "lsuTriviaStreak"; // { streak, lastResult, lastDate }
+
+function dayBefore(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return dt.toISOString().slice(0, 10);
+}
 
 function normalize(str) {
   return str.toLowerCase().replace(/[^a-z]/g, "");
+}
+
+function formatShareDate(dateStr) {
+  // dateStr is "YYYY-MM-DD" — build it manually to avoid timezone shifting the day.
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  return `${months[m - 1]} ${d}`;
 }
 
 export default function TriviaGame({ puzzle }) {
   const [clueIndex, setClueIndex] = useState(0);
   const [guess, setGuess] = useState("");
   const [status, setStatus] = useState("playing");
-  const [history, setHistory] = useState([]);
+  const [history, setHistory] = useState([]); // wrong guesses, one per clue revealed
+  const [copied, setCopied] = useState(false);
+  const [streak, setStreak] = useState(null); // null until loaded from localStorage
+  const [secondsLeft, setSecondsLeft] = useState(SECONDS_PER_CLUE);
+  const timerRef = useRef(null);
 
-  const revealedClues = puzzle.clues.slice(0, clueIndex + 1);
+  // Load streak on mount.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STREAK_KEY);
+      setStreak(raw ? JSON.parse(raw) : { streak: 0, lastResult: null, lastDate: null });
+    } catch {
+      setStreak({ streak: 0, lastResult: null, lastDate: null });
+    }
+  }, []);
+
+  // Record today's result into the streak exactly once, the first time this
+  // puzzle's round ends (not on replays).
+  useEffect(() => {
+    if (status === "playing" || streak === null) return;
+    if (streak.lastDate === puzzle.date) return; // already recorded today
+
+    let nextStreak;
+    if (status === "won") {
+      nextStreak = streak.lastDate === dayBefore(puzzle.date) && streak.lastResult === "won"
+        ? streak.streak + 1
+        : 1;
+    } else {
+      nextStreak = 0;
+    }
+    const next = { streak: nextStreak, lastResult: status, lastDate: puzzle.date };
+    setStreak(next);
+    try {
+      localStorage.setItem(STREAK_KEY, JSON.stringify(next));
+    } catch {
+      // localStorage unavailable (private browsing, etc) — streak just won't persist.
+    }
+  }, [status, streak, puzzle.date]);
+
+  // 90-second countdown per clue. Resets whenever a new clue is revealed.
+  useEffect(() => {
+    if (status !== "playing") {
+      clearInterval(timerRef.current);
+      return;
+    }
+    setSecondsLeft(SECONDS_PER_CLUE);
+    timerRef.current = setInterval(() => {
+      setSecondsLeft((s) => {
+        if (s <= 1) {
+          clearInterval(timerRef.current);
+          handleTimeout();
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timerRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clueIndex, status]);
+
   const cluesUsed = clueIndex + 1;
+  // Once the round ends, show every clue (even ones never needed) so people
+  // can see how the puzzle built up. While playing, only show what's revealed.
+  const revealedClues =
+    status === "playing" ? puzzle.clues.slice(0, clueIndex + 1) : puzzle.clues;
 
   function submitGuess(e) {
     e.preventDefault();
@@ -36,7 +113,19 @@ export default function TriviaGame({ puzzle }) {
     setGuess("");
   }
 
+  function handleTimeout() {
+    setHistory((h) => [...h, "⏰ timed out"]);
+    setClueIndex((i) => {
+      if (i + 1 >= MAX_CLUES) {
+        setStatus("lost");
+        return i;
+      }
+      return i + 1;
+    });
+  }
+
   function giveUp() {
+    setHistory((h) => [...h, ...Array(MAX_CLUES - h.length).fill("—")]);
     setStatus("lost");
   }
 
@@ -45,6 +134,7 @@ export default function TriviaGame({ puzzle }) {
     setGuess("");
     setStatus("playing");
     setHistory([]);
+    setCopied(false);
   }
 
   const resultSquares = useMemo(() => {
@@ -55,6 +145,35 @@ export default function TriviaGame({ puzzle }) {
 
   const score = status === "won" ? POINTS_BY_CLUE[cluesUsed - 1] : 0;
 
+  // Build the shareable emoji line: X for each wrong guess, tiger for the win,
+  // and blank squares for clues never reached.
+  const shareEmoji = useMemo(() => {
+    return Array.from({ length: MAX_CLUES }, (_, i) => {
+      if (status === "won" && i === cluesUsed - 1) return "🐯";
+      if (i < history.length) return "❌";
+      return "⬜";
+    }).join("");
+  }, [status, cluesUsed, history]);
+
+  const shareText = useMemo(() => {
+    const dateLabel = formatShareDate(puzzle.date);
+    const resultLine =
+      status === "won"
+        ? `Solved in ${cluesUsed}/5 · ${score} pts`
+        : `Stumped today · 0 pts`;
+    return `LSU Daily Trivia · ${dateLabel}\n${shareEmoji}\n${resultLine}\nlsutrivia.com`;
+  }, [puzzle.date, status, cluesUsed, score, shareEmoji]);
+
+  async function copyResults() {
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API unavailable — fail silently, button just won't confirm.
+    }
+  }
+
   return (
     <main
       style={{
@@ -62,7 +181,7 @@ export default function TriviaGame({ puzzle }) {
         minHeight: "100vh",
         fontFamily: "'Inter', system-ui, sans-serif",
         color: "#241433",
-        padding: "26px 16px 48px",
+        padding: "26px 16px 40px",
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -78,6 +197,7 @@ export default function TriviaGame({ puzzle }) {
         .btn-main { transition: transform .12s ease; }
         .btn-main:hover { transform: translateY(-1px); }
         .btn-main:active { transform: translateY(0); }
+        a.footer-link { color: #461D7C; font-weight: 700; text-decoration: underline; }
       `}</style>
 
       <div style={{ width: "100%", maxWidth: 480 }}>
@@ -89,8 +209,27 @@ export default function TriviaGame({ puzzle }) {
             color: "#FDD023",
           }}
         >
-          <div className="mono" style={{ fontSize: 11, letterSpacing: 2, opacity: 0.85 }}>
-            DAILY · {puzzle.date}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div className="mono" style={{ fontSize: 11, letterSpacing: 2, opacity: 0.85 }}>
+              DAILY · {puzzle.date}
+            </div>
+            {streak !== null && streak.streak > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  background: "rgba(253,208,35,0.15)",
+                  borderRadius: 14,
+                  padding: "3px 9px",
+                }}
+              >
+                <Flame size={13} color="#FDD023" />
+                <span className="mono" style={{ fontSize: 12, fontWeight: 700 }}>
+                  {streak.streak}
+                </span>
+              </div>
+            )}
           </div>
           <h1 className="pf" style={{ fontSize: 28, margin: "4px 0 0", color: "#FDD023" }}>
             Who Am I?
@@ -134,6 +273,26 @@ export default function TriviaGame({ puzzle }) {
             boxShadow: "0 6px 18px rgba(70,29,124,0.08)",
           }}
         >
+          {status === "playing" && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                marginBottom: 10,
+                color: secondsLeft <= 15 ? "#C23B3B" : "#9A8E70",
+                fontSize: 12.5,
+              }}
+            >
+              <Timer size={14} />
+              <span className="mono">
+                {String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:
+                {String(secondsLeft % 60).padStart(2, "0")}
+              </span>
+              <span style={{ color: "#C9BFA8" }}>left on this clue</span>
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
             {resultSquares.map((s, i) => (
               <div
@@ -149,40 +308,45 @@ export default function TriviaGame({ puzzle }) {
           </div>
 
           <div style={{ display: "grid", gap: 10, marginBottom: 18 }}>
-            {revealedClues.map((c, i) => (
-              <div
-                key={i}
-                className="clue-row"
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "flex-start",
-                  background: "#F4EFE3",
-                  borderRadius: 8,
-                  padding: "10px 12px",
-                }}
-              >
-                <span
-                  className="mono"
+            {revealedClues.map((c, i) => {
+              const neverReached = status !== "playing" && i >= cluesUsed;
+              return (
+                <div
+                  key={i}
+                  className="clue-row"
                   style={{
-                    background: "#461D7C",
-                    color: "#FDD023",
-                    borderRadius: "50%",
-                    width: 22,
-                    height: 22,
-                    minWidth: 22,
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 12,
-                    fontWeight: 700,
+                    gap: 10,
+                    alignItems: "flex-start",
+                    background: neverReached ? "#FBF8F1" : "#F4EFE3",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                    opacity: neverReached ? 0.65 : 1,
                   }}
                 >
-                  {i + 1}
-                </span>
-                <span style={{ fontSize: 14.5, lineHeight: 1.4, paddingTop: 1 }}>{c}</span>
-              </div>
-            ))}
+                  <span
+                    className="mono"
+                    style={{
+                      background:
+                        i === cluesUsed - 1 && status === "won" ? "#FDD023" : "#461D7C",
+                      color: i === cluesUsed - 1 && status === "won" ? "#241433" : "#FDD023",
+                      borderRadius: "50%",
+                      width: 22,
+                      height: 22,
+                      minWidth: 22,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 12,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {i + 1}
+                  </span>
+                  <span style={{ fontSize: 14.5, lineHeight: 1.4, paddingTop: 1 }}>{c}</span>
+                </div>
+              );
+            })}
           </div>
 
           {history.length > 0 && status === "playing" && (
@@ -271,6 +435,92 @@ export default function TriviaGame({ puzzle }) {
                 </div>
               )}
 
+              {puzzle.funFacts && puzzle.funFacts.length > 0 && (
+                <div
+                  style={{
+                    marginTop: 14,
+                    textAlign: "left",
+                    background: "#F4EFE3",
+                    borderRadius: 8,
+                    padding: "10px 12px",
+                  }}
+                >
+                  <div
+                    className="mono"
+                    style={{ fontSize: 10.5, letterSpacing: 1, color: "#9A8E70", marginBottom: 4 }}
+                  >
+                    FUN FACT{puzzle.funFacts.length > 1 ? "S" : ""}
+                  </div>
+                  {puzzle.funFacts.map((f, i) => (
+                    <div key={i} style={{ fontSize: 13.5, lineHeight: 1.45, marginBottom: 2 }}>
+                      {f}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {streak !== null && streak.lastDate === puzzle.date && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    fontSize: 12.5,
+                    color: "#5B4A78",
+                  }}
+                >
+                  <Flame size={14} color={streak.streak > 0 ? "#E8A300" : "#9A8E70"} />
+                  {streak.streak > 0
+                    ? `${streak.streak} day streak`
+                    : "Streak reset — get it tomorrow"}
+                </div>
+              )}
+
+              {/* Share results */}
+              <div
+                style={{
+                  marginTop: 16,
+                  background: "#241433",
+                  borderRadius: 10,
+                  padding: "14px 16px",
+                  textAlign: "left",
+                }}
+              >
+                <div className="mono" style={{ fontSize: 12, lineHeight: 1.5, color: "#FDD023" }}>
+                  LSU Daily Trivia · {formatShareDate(puzzle.date)}
+                </div>
+                <div style={{ fontSize: 22, letterSpacing: 3, margin: "4px 0" }}>
+                  {shareEmoji}
+                </div>
+                <div style={{ fontSize: 13, color: "#E8DCF5" }}>
+                  {status === "won"
+                    ? `Solved in ${cluesUsed}/5 · ${score} pts`
+                    : "Stumped today · 0 pts"}
+                </div>
+                <button
+                  onClick={copyResults}
+                  className="btn-main"
+                  style={{
+                    marginTop: 10,
+                    background: copied ? "#3D8B5F" : "#FDD023",
+                    color: copied ? "#fff" : "#241433",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: "8px 14px",
+                    fontSize: 13.5,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                  {copied ? "Copied!" : "Copy results"}
+                </button>
+              </div>
+
               <div style={{ display: "flex", gap: 8, justifyContent: "center", marginTop: 16 }}>
                 <button
                   onClick={playAgain}
@@ -316,17 +566,28 @@ export default function TriviaGame({ puzzle }) {
           )}
         </div>
 
-        <footer
-          style={{
-            textAlign: "center",
-            fontSize: 11.5,
-            color: "#9A8E70",
-            marginTop: 18,
-            lineHeight: 1.5,
-          }}
-        >
-          Unofficial fan trivia game. Not affiliated with or endorsed by LSU
-          or the LSU Athletic Department.
+        <footer style={{ textAlign: "center", marginTop: 22 }}>
+          <img
+            src="/power-hour-lsu-logo.png"
+            alt="Power Hour LSU"
+            style={{ width: 64, height: 64, margin: "0 auto 8px", display: "block" }}
+          />
+          <div style={{ fontSize: 13, color: "#5B4A78" }}>
+            A{" "}
+            <a
+              className="footer-link"
+              href="https://www.youtube.com/@powerhourlsu"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Power Hour LSU
+            </a>{" "}
+            production.
+          </div>
+          <div style={{ fontSize: 11, color: "#9A8E70", marginTop: 8, lineHeight: 1.5 }}>
+            Unofficial fan trivia game. Not affiliated with or endorsed by LSU
+            or the LSU Athletic Department.
+          </div>
         </footer>
       </div>
     </main>
