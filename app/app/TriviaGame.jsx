@@ -6,6 +6,7 @@ import { Lock, ChevronRight, RotateCcw, Trophy, Check, Flame, Share2, HelpCircle
 const MAX_CLUES = 5;
 const POINTS_BY_CLUE = [100, 80, 60, 40, 20];
 const STREAK_KEY = "lsuTriviaStreak";
+const EMAIL_DELAY_MS = 10000; // 10 seconds after round ends
 
 function dayBefore(dateStr) {
   const [y, m, d] = dateStr.split("-").map(Number);
@@ -14,9 +15,7 @@ function dayBefore(dateStr) {
   return dt.toISOString().slice(0, 10);
 }
 
-function normalize(str) {
-  return str.toLowerCase().replace(/[^a-z]/g, "");
-}
+function normalize(str) { return str.toLowerCase().replace(/[^a-z]/g, ""); }
 
 function isCorrectGuess(guess, answer) {
   const g = normalize(guess);
@@ -28,37 +27,29 @@ function isCorrectGuess(guess, answer) {
 
 function formatDisplayDate(dateStr) {
   const [y, m, d] = dateStr.split("-").map(Number);
-  const months = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
-                  "JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
-  return `${months[m - 1]} ${d}, ${y}`;
+  const months = ["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
+  return `${months[m-1]} ${d}, ${y}`;
 }
 
 function formatShareDate(dateStr) {
   const [y, m, d] = dateStr.split("-").map(Number);
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  return `${months[m - 1]} ${d}`;
+  return `${months[m-1]} ${d}`;
 }
 
-// Injects the MailerLite embed correctly so its scripts execute.
 function MailerLiteForm() {
   const ref = useRef(null);
   const initialized = useRef(false);
-
   useEffect(() => {
     if (!ref.current || initialized.current) return;
     initialized.current = true;
-
-    // Styles
-    const style1 = document.createElement("style");
-    style1.textContent = `@import url("https://assets.mlcdn.com/fonts.css?version=1783937");`;
-    ref.current.appendChild(style1);
-
-    const style2 = document.createElement("style");
-    style2.textContent = `
+    const style = document.createElement("style");
+    style.textContent = `
+      @import url("https://assets.mlcdn.com/fonts.css?version=1783937");
       .ml-form-embedSubmitLoad{display:inline-block;width:20px;height:20px;}
       .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0;}
-      .ml-form-embedSubmitLoad:after{content:" ";display:block;width:11px;height:11px;margin:1px;border-radius:50%;border:4px solid #fff;border-color:#ffffff #ffffff #ffffff transparent;animation:ml-form-embedSubmitLoad 1.2s linear infinite;}
-      @keyframes ml-form-embedSubmitLoad{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
+      .ml-form-embedSubmitLoad:after{content:" ";display:block;width:11px;height:11px;margin:1px;border-radius:50%;border:4px solid #fff;border-color:#fff #fff #fff transparent;animation:ml-spin 1.2s linear infinite;}
+      @keyframes ml-spin{0%{transform:rotate(0deg);}100%{transform:rotate(360deg);}}
       #mlb2-43671474.ml-form-embedContainer{box-sizing:border-box;display:table;margin:0 auto;position:static;width:100%!important;}
       #mlb2-43671474.ml-form-embedContainer .ml-form-embedWrapper{background-color:transparent!important;border:none;box-sizing:border-box;display:inline-block!important;margin:0;padding:0;position:relative;width:100%!important;}
       #mlb2-43671474.ml-form-embedContainer .ml-form-embedWrapper .ml-form-embedBody{padding:0!important;}
@@ -75,9 +66,7 @@ function MailerLiteForm() {
       #mlb2-43671474.ml-form-embedContainer .ml-form-embedWrapper .ml-form-successBody .ml-form-successContent h4{color:#FDD023!important;font-size:15px!important;margin:0 0 4px 0!important;font-family:'Open Sans',Arial,sans-serif;}
       #mlb2-43671474.ml-form-embedContainer .ml-form-embedWrapper .ml-form-successBody .ml-form-successContent p{color:#E8DCF5!important;font-size:13px!important;margin:0!important;font-family:'Open Sans',Arial,sans-serif;}
     `;
-    ref.current.appendChild(style2);
-
-    // Form HTML
+    ref.current.appendChild(style);
     const wrapper = document.createElement("div");
     wrapper.id = "mlb2-43671474";
     wrapper.className = "ml-form-embedContainer ml-subscribe-form ml-subscribe-form-43671474";
@@ -112,33 +101,18 @@ function MailerLiteForm() {
             </div>
           </div>
         </div>
-      </div>
-    `;
+      </div>`;
     ref.current.appendChild(wrapper);
-
-    // Success callback
     const fnScript = document.createElement("script");
-    fnScript.textContent = `
-      function ml_webform_success_43671474() {
-        var $ = ml_jQuery || jQuery;
-        $('.ml-subscribe-form-43671474 .row-success').show();
-        $('.ml-subscribe-form-43671474 .row-form').hide();
-      }
-    `;
+    fnScript.textContent = `function ml_webform_success_43671474(){var $=ml_jQuery||jQuery;$('.ml-subscribe-form-43671474 .row-success').show();$('.ml-subscribe-form-43671474 .row-form').hide();}`;
     ref.current.appendChild(fnScript);
-
-    // MailerLite main script
     const mainScript = document.createElement("script");
     mainScript.src = "https://groot.mailerlite.com/js/w/webforms.min.js?v83147fa8ce2d95cb73ece7f28b469519";
-    mainScript.type = "text/javascript";
     ref.current.appendChild(mainScript);
-
-    // Tracking fetch
     const trackScript = document.createElement("script");
     trackScript.textContent = `fetch("https://assets.mailerlite.com/jsonp/2506104/forms/192852546941879342/takel")`;
     ref.current.appendChild(trackScript);
   }, []);
-
   return <div ref={ref} />;
 }
 
@@ -151,53 +125,60 @@ export default function TriviaGame({ puzzle }) {
   const [streak, setStreak] = useState(null);
   const [showHow, setShowHow] = useState(false);
   const [showGiveUpConfirm, setShowGiveUpConfirm] = useState(false);
+  const [showEmail, setShowEmail] = useState(false);
+  const emailTimerRef = useRef(null);
 
   const cluesUsed = clueIndex + 1;
   const revealedClues = status === "playing" ? puzzle.clues.slice(0, clueIndex + 1) : puzzle.clues;
 
+  // Load streak
   useEffect(() => {
     try {
       const raw = localStorage.getItem(STREAK_KEY);
       setStreak(raw ? JSON.parse(raw) : { streak: 0, lastResult: null, lastDate: null });
-    } catch {
-      setStreak({ streak: 0, lastResult: null, lastDate: null });
-    }
+    } catch { setStreak({ streak: 0, lastResult: null, lastDate: null }); }
   }, []);
 
+  // Save streak once per day
   useEffect(() => {
     if (status === "playing" || streak === null) return;
     if (streak.lastDate === puzzle.date) return;
-    let nextStreak;
-    if (status === "won") {
-      nextStreak = streak.lastDate === dayBefore(puzzle.date) && streak.lastResult === "won"
-        ? streak.streak + 1 : 1;
-    } else {
-      nextStreak = 0;
-    }
+    const nextStreak = status === "won"
+      ? (streak.lastDate === dayBefore(puzzle.date) && streak.lastResult === "won" ? streak.streak + 1 : 1)
+      : 0;
     const next = { streak: nextStreak, lastResult: status, lastDate: puzzle.date };
     setStreak(next);
     try { localStorage.setItem(STREAK_KEY, JSON.stringify(next)); } catch {}
   }, [status, streak, puzzle.date]);
 
+  // 10-second delay before showing email CTA after round ends
+  useEffect(() => {
+    if (status === "playing") {
+      setShowEmail(false);
+      clearTimeout(emailTimerRef.current);
+      return;
+    }
+    emailTimerRef.current = setTimeout(() => setShowEmail(true), EMAIL_DELAY_MS);
+    return () => clearTimeout(emailTimerRef.current);
+  }, [status]);
+
   function submitGuess(e) {
     e.preventDefault();
     if (status !== "playing" || !guess.trim()) return;
-    if (isCorrectGuess(guess, puzzle.answer)) {
-      setStatus("won");
-    } else {
+    if (isCorrectGuess(guess, puzzle.answer)) { setStatus("won"); }
+    else {
       setHistory(h => [...h, guess.trim()]);
       if (cluesUsed >= MAX_CLUES) { setStatus("lost"); }
       else { setClueIndex(i => i + 1); }
     }
-    setGuess("");
-    setShowGiveUpConfirm(false);
+    setGuess(""); setShowGiveUpConfirm(false);
   }
 
   function confirmGiveUp() { setStatus("lost"); setShowGiveUpConfirm(false); }
 
   function playAgain() {
     setClueIndex(0); setGuess(""); setStatus("playing");
-    setHistory([]); setCopied(false); setShowGiveUpConfirm(false);
+    setHistory([]); setCopied(false); setShowGiveUpConfirm(false); setShowEmail(false);
   }
 
   const resultSquares = useMemo(() =>
@@ -215,9 +196,8 @@ export default function TriviaGame({ puzzle }) {
     }).join(""), [status, cluesUsed, history]);
 
   const shareText = useMemo(() => {
-    const dateLabel = formatShareDate(puzzle.date);
     const resultLine = status === "won" ? `Solved in ${cluesUsed}/5 · ${score} pts` : "Stumped today · 0 pts";
-    return `LSU Tiger Trivia · ${dateLabel}\n${shareEmoji}\n${resultLine}\nlsutrivia.com`;
+    return `LSU Tiger Trivia · ${formatShareDate(puzzle.date)}\n${shareEmoji}\n${resultLine}\nlsutrivia.com`;
   }, [puzzle.date, status, cluesUsed, score, shareEmoji]);
 
   async function shareResults() {
@@ -226,8 +206,9 @@ export default function TriviaGame({ puzzle }) {
   }
 
   return (
-    <main style={{ background: "#F4EFE3", minHeight: "100vh", fontFamily: "'Inter', system-ui, sans-serif", color: "#241433", padding: "26px 16px 40px", display: "flex", flexDirection: "column", alignItems: "center" }}>
+    <main style={{ background:"#F4EFE3", minHeight:"100vh", fontFamily:"'Inter',system-ui,sans-serif", color:"#241433", padding:"26px 16px 40px", boxSizing:"border-box", width:"100%", overflowX:"hidden", display:"flex", flexDirection:"column", alignItems:"center" }}>
       <style>{`
+        *, *::before, *::after { box-sizing: border-box; }
         @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
         .pf{font-family:'Playfair Display',serif;} .mono{font-family:'JetBrains Mono',monospace;}
         .clue-row{animation:slideIn .25s ease both;}
@@ -237,6 +218,8 @@ export default function TriviaGame({ puzzle }) {
         a.footer-link{color:#461D7C;font-weight:700;text-decoration:underline;}
         .modal-overlay{position:fixed;inset:0;background:rgba(10,5,20,0.65);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px;}
         .modal-box{background:#FFFDF8;border-radius:14px;padding:24px 22px;max-width:380px;width:100%;position:relative;}
+        @keyframes fadeSlideUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:translateY(0);}}
+        .email-cta{animation:fadeSlideUp .4s ease both;}
       `}</style>
 
       {showHow && (
@@ -246,9 +229,9 @@ export default function TriviaGame({ puzzle }) {
             <h2 className="pf" style={{ color:"#461D7C",fontSize:20,margin:"0 0 14px" }}>How to Play</h2>
             <div style={{ display:"grid",gap:10,fontSize:14,lineHeight:1.5,color:"#3A2A5A" }}>
               <div style={{ display:"flex",gap:10 }}><span style={{ fontSize:18 }}>🏈</span><span>A new LSU football player (or rival) is revealed every day.</span></div>
-              <div style={{ display:"flex",gap:10 }}><span style={{ fontSize:18 }}>🔍</span><span>You get <strong>5 clues</strong>, revealed one at a time. Clue 1 is the hardest, clue 5 is the easiest.</span></div>
-              <div style={{ display:"flex",gap:10 }}><span style={{ fontSize:18 }}>⚡</span><span>Each wrong guess reveals the next clue. <strong>Fewer clues used = higher score.</strong></span></div>
-              <div style={{ display:"flex",gap:10 }}><span style={{ fontSize:18 }}>✅</span><span>Type the player's <strong>first and last name, or just their last name</strong> — both count.</span></div>
+              <div style={{ display:"flex",gap:10 }}><span style={{ fontSize:18 }}>🔍</span><span>You get <strong>5 clues</strong>, one at a time. Clue 1 is the hardest, clue 5 the easiest.</span></div>
+              <div style={{ display:"flex",gap:10 }}><span style={{ fontSize:18 }}>⚡</span><span>Each wrong guess reveals the next clue. <strong>Fewer clues = higher score.</strong></span></div>
+              <div style={{ display:"flex",gap:10 }}><span style={{ fontSize:18 }}>✅</span><span>Type the player's <strong>full name or just their last name</strong> — both count.</span></div>
               <div style={{ display:"flex",gap:10 }}><span style={{ fontSize:18 }}>🔥</span><span>Solve daily to build your streak. Miss a day and it resets.</span></div>
             </div>
             <div style={{ marginTop:18,textAlign:"right" }}>
@@ -258,8 +241,9 @@ export default function TriviaGame({ puzzle }) {
         </div>
       )}
 
-      <div style={{ width:"100%",maxWidth:480 }}>
+      <div style={{ width:"100%", maxWidth:480 }}>
 
+        {/* Header */}
         <div style={{ background:"#461D7C",borderRadius:"14px 14px 0 0",padding:"18px 20px 22px",color:"#FDD023" }}>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
             <div className="mono" style={{ fontSize:10,letterSpacing:1.5,opacity:0.85 }}>LSU TIGER TRIVIA · {formatDisplayDate(puzzle.date)}</div>
@@ -277,11 +261,14 @@ export default function TriviaGame({ puzzle }) {
           <div style={{ fontSize:13,color:"#E8DCF5",marginTop:2 }}>Each wrong guess reveals your next clue.</div>
         </div>
 
+        {/* Perforation */}
         <div style={{ height:0,borderTop:"2px dashed #C9BFA8",position:"relative" }}>
           {[...Array(14)].map((_,i) => <span key={i} style={{ position:"absolute",top:-7,left:`${(i/13)*100}%`,width:14,height:14,borderRadius:"50%",background:"#F4EFE3" }}/>)}
         </div>
 
+        {/* Card */}
         <div style={{ background:"#FFFDF8",border:"1px solid #E3DBC8",borderTop:"none",borderRadius:"0 0 14px 14px",padding:"20px 20px 24px",boxShadow:"0 6px 18px rgba(70,29,124,0.08)" }}>
+
           <div style={{ display:"flex",gap:6,marginBottom:16 }}>
             {resultSquares.map((s,i) => <div key={i} style={{ flex:1,height:8,borderRadius:4,background:s==="win"?"#FDD023":s==="used"?"#461D7C":"#E3DBC8",transition:"background .2s" }}/>)}
           </div>
@@ -305,8 +292,8 @@ export default function TriviaGame({ puzzle }) {
           {status === "playing" ? (
             <>
               <form onSubmit={submitGuess} style={{ display:"flex",gap:8 }}>
-                <input className="guess-input" value={guess} onChange={e => setGuess(e.target.value)} placeholder="Type your guess..." style={{ flex:1,border:"1.5px solid #D8CBB0",borderRadius:8,padding:"10px 12px",fontSize:14.5,background:"#FFFDF8",color:"#241433" }} aria-label="Your guess"/>
-                <button type="submit" className="btn-main" style={{ background:"#FDD023",color:"#241433",border:"none",borderRadius:8,padding:"10px 16px",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",gap:4 }}>Guess <ChevronRight size={16}/></button>
+                <input className="guess-input" value={guess} onChange={e => setGuess(e.target.value)} placeholder="Type your guess..." style={{ flex:1,border:"1.5px solid #D8CBB0",borderRadius:8,padding:"10px 12px",fontSize:14.5,background:"#FFFDF8",color:"#241433",minWidth:0 }} aria-label="Your guess"/>
+                <button type="submit" className="btn-main" style={{ background:"#FDD023",color:"#241433",border:"none",borderRadius:8,padding:"10px 16px",fontWeight:700,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",flexShrink:0 }}>Guess <ChevronRight size={16}/></button>
               </form>
               <div style={{ marginTop:14,borderTop:"1px solid #EDE8DC",paddingTop:12 }}>
                 {!showGiveUpConfirm ? (
@@ -362,8 +349,9 @@ export default function TriviaGame({ puzzle }) {
           )}
         </div>
 
-        {status !== "playing" && (
-          <div style={{ marginTop:20,background:"#461D7C",borderRadius:14,padding:"20px 20px 18px" }}>
+        {/* Email CTA — appears 10s after round ends */}
+        {showEmail && (
+          <div className="email-cta" style={{ marginTop:20,background:"#461D7C",borderRadius:14,padding:"20px 20px 18px" }}>
             <div style={{ fontSize:14,color:"#FDD023",fontWeight:700,textAlign:"center",marginBottom:4 }}>🏈 Get the daily puzzle in your inbox</div>
             <div style={{ fontSize:12,color:"#C9B8E8",textAlign:"center",marginBottom:14 }}>Never miss a day.</div>
             <MailerLiteForm/>
@@ -371,6 +359,7 @@ export default function TriviaGame({ puzzle }) {
           </div>
         )}
 
+        {/* Footer */}
         <footer style={{ textAlign:"center",marginTop:22 }}>
           <img src="/power-hour-lsu-logo.png" alt="Power Hour LSU" style={{ width:78,height:78,margin:"0 auto 6px",display:"block" }}/>
           <div style={{ fontSize:13,color:"#5B4A78" }}>A{" "}<a className="footer-link" href="https://www.youtube.com/@powerhourlsu" target="_blank" rel="noopener noreferrer">Power Hour LSU</a>{" "}production.</div>
