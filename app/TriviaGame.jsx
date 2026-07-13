@@ -373,13 +373,13 @@ export default function TriviaGame({ puzzle }) {
           )}
         </div>
 
-        {/* MailerLite email signup */}
-        <div style={{ marginTop: 20, background: "#461D7C", borderRadius: 14, padding: "20px 20px 18px", textAlign: "center" }}>
+       {/* MailerLite email signup — only shown after round ends */}
+{status !== "playing" && <div style={{ marginTop: 20, background: "#461D7C", borderRadius: 14, padding: "20px 20px 18px", textAlign: "center" }}>
           <div style={{ fontSize: 13, color: "#FDD023", fontWeight: 700, letterSpacing: 0.5, marginBottom: 4 }}>
             🏈 Get the daily puzzle in your inbox
           </div>
           <div style={{ fontSize: 12, color: "#C9B8E8", marginBottom: 14 }}>
-            Never miss a day. No spam — just the daily player clue.
+            Never miss a day!
           </div>
 
           {/*
@@ -1287,7 +1287,7 @@ export default function TriviaGame({ puzzle }) {
           {/* END PLACEHOLDER */}
 
           <div style={{ fontSize: 10.5, color: "#9A8E70", marginTop: 10 }}>No spam. Unsubscribe anytime.</div>
-        </div>
+        </div>}
 
         {/* Footer */}
         <footer style={{ textAlign: "center", marginTop: 22 }}>
