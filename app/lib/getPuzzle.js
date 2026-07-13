@@ -20,7 +20,6 @@ function parseCSV(text) {
   return rows.filter(r => r.some(c => c.trim() !== ""));
 }
 
-// Sheet columns: date | answer | isRival | clue1 | clue2 | clue3 | clue4 | clue5 | funfact1 | funfact2
 function rowsToPuzzles(rows) {
   const [, ...dataRows] = rows;
   return dataRows.map(cols => {
